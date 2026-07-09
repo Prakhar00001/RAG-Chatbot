@@ -3,10 +3,12 @@
 A production-style Retrieval-Augmented Generation chatbot for PDF documents with chunking, FAISS indexing, hybrid retrieval, citations, and a Streamlit UI.
 
 ## Live Demo
-Open the deployed app here:
+The live app is not published yet, so this link will not work until deployment is completed.
+
+Once you deploy the app on Streamlit Community Cloud, replace this placeholder with your real URL:
 - [Open the deployed chatbot](https://your-deployed-url.streamlit.app)
 
-> Replace the placeholder URL above with your real Streamlit Cloud deployment link once the app is published.
+> The current link is only a placeholder and will show an error until the app is actually deployed.
 
 ## Features
 - Multi-PDF upload and ingestion
