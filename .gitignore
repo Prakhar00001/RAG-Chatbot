@@ -1,11 +1,21 @@
-.venv/
+# Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ipynb_checkpoints/
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Streamlit & Environment Configs
+.streamlit/secrets.toml
 .env
 *.log
-.DS_Store
-.idea/
+
+# IDEs & OS
 .vscode/
+.idea/
+.DS_Store
