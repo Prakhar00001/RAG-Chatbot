@@ -69,7 +69,7 @@ if process_btn:
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
     else:
-        with st.spinner("⚡ Initializing BM25 Index (Zero Embedding Errors)..."):
+        with st.spinner("⚡ Initializing BM25 Index..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -109,8 +109,16 @@ with chat_col:
         with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
             st.markdown(message["content"])
 
-    user_query = st.chat_input("Ask a question across your documents...")
-    if user_query:
+    # Inline chat form staying right below the last message/answer
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_query = st.text_input(
+            "Ask a question...", 
+            placeholder="Ask a question across your documents...", 
+            label_visibility="collapsed"
+        )
+        submitted = st.form_submit_button("Send 🚀", use_container_width=True)
+
+    if submitted and user_query:
         if st.session_state.retriever is None:
             st.warning("⚠️ Please upload and process documents in the sidebar first.")
         elif not client:
@@ -147,6 +155,7 @@ with chat_col:
                     
                     message_placeholder.markdown(full_response)
                     st.session_state.chat_history.append({"role": "assistant", "content": full_response})
+                    st.rerun()
                 except Exception as e:
                     message_placeholder.error(f"Error: {str(e)}")
 
