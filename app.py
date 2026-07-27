@@ -1,10 +1,10 @@
 import os
 import tempfile
 import streamlit as st
+import numpy as np
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.retrievers import BM25Retriever
 from google import genai
 
 load_dotenv()
@@ -41,7 +41,8 @@ api_key = os.environ.get("GOOGLE_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
-if "retriever" not in st.session_state: st.session_state.retriever = None
+if "doc_chunks" not in st.session_state: st.session_state.doc_chunks = []
+if "doc_embeddings" not in st.session_state: st.session_state.doc_embeddings = []
 if "doc_stats" not in st.session_state: st.session_state.doc_stats = {"files": 0, "chunks": 0}
 if "latest_sources" not in st.session_state: st.session_state.latest_sources = []
 
@@ -68,8 +69,10 @@ if process_btn:
         st.sidebar.error("⚠️ API Key not found in environment or secrets.")
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
+    elif not client:
+        st.sidebar.error("⚠️ Google GenAI Client not initialized.")
     else:
-        with st.spinner("⚡ Initializing Keyword Index..."):
+        with st.spinner("⚡ Generating Google Semantic Embeddings (No PyTorch/DLLs)..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -88,17 +91,42 @@ if process_btn:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = text_splitter.split_documents(all_docs)
             
-            bm25_retriever = BM25Retriever.from_documents(chunks)
-            bm25_retriever.k = 4
-            st.session_state.retriever = bm25_retriever
+            # Generate embeddings via Google API (text-embedding-004)
+            embeddings = []
+            for chunk in chunks:
+                response = client.models.embed_content(
+                    model="text-embedding-004",
+                    contents=chunk.page_content
+                )
+                embeddings.append(response.embedding.values)
             
+            st.session_state.doc_chunks = chunks
+            st.session_state.doc_embeddings = np.array(embeddings)
             st.session_state.doc_stats = {"files": len(uploaded_files), "chunks": len(chunks)}
-            st.sidebar.success("✨ Index Online!")
+            st.sidebar.success("✨ Semantic Vector Index Online!")
+
+def semantic_search(query, k=4):
+    if len(st.session_state.doc_chunks) == 0 or client is None:
+        return []
+    
+    # Embed query
+    q_response = client.models.embed_content(
+        model="text-embedding-004",
+        contents=query
+    )
+    q_vec = np.array(q_response.embedding.values)
+    
+    # Compute Cosine Similarity
+    doc_matrix = st.session_state.doc_embeddings
+    similarities = np.dot(doc_matrix, q_vec) / (np.linalg.norm(doc_matrix, axis=1) * np.linalg.norm(q_vec) + 1e-10)
+    
+    top_indices = np.argsort(similarities)[::-1][:k]
+    return [st.session_state.doc_chunks[i] for i in top_indices]
 
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 3.6 Flash</div>
+    <div class="hero-subtitle">Autonomous Semantic Q&A powered by Google Cloud Embeddings & Gemini</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -111,10 +139,10 @@ with chat_col:
 
     user_query = st.chat_input("Ask a question across your documents...")
     if user_query:
-        if st.session_state.retriever is None:
-            st.warning("⚠️ Please upload and process documents in the sidebar first.")
+        if len(st.session_state.doc_chunks) == 0:
+            st.warning("⚠️ Please upload and initialize documents in the sidebar first.")
         elif not client:
-            st.error("⚠️ Google API Client not initialized. Check your API key.")
+            st.error("⚠️ Google API Client not initialized.")
         else:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
             with st.chat_message("user", avatar="👤"):
@@ -124,7 +152,7 @@ with chat_col:
                 message_placeholder = st.empty()
                 full_response = ""
                 try:
-                    retrieved_docs = st.session_state.retriever.invoke(user_query)
+                    retrieved_docs = semantic_search(user_query)
                     st.session_state.latest_sources = retrieved_docs
                     
                     context_text = "\n\n".join([
@@ -134,7 +162,6 @@ with chat_col:
                     
                     prompt = f"Answer accurately using ONLY the provided context. If the answer is absent, state that you cannot find it. Cite sources clearly.\n\nContext:\n{context_text}\n\nQuestion: {user_query}"
                     
-                    # Using the active gemini-3.6-flash model
                     response = client.models.generate_content(
                         model='gemini-3.6-flash',
                         contents=prompt
@@ -154,11 +181,11 @@ with chat_col:
 with source_col:
     st.markdown("### 🔍 Live Source Inspector")
     if st.session_state.latest_sources:
-        st.markdown(f"<p style='color: #94A3B8; font-size: 0.85rem;'>Retrieved {len(st.session_state.latest_sources)} chunks</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #94A3B8; font-size: 0.85rem;'>Retrieved {len(st.session_state.latest_sources)} semantic chunks</p>", unsafe_allow_html=True)
         for doc in st.session_state.latest_sources:
             src_name = doc.metadata.get('source', 'Unknown')
             page_num = doc.metadata.get('page', 0) + 1
             preview_text = doc.page_content[:220].replace('\n', ' ')
             st.markdown(f'<div class="glass-card" style="font-size: 0.85rem;"><div style="font-weight: 600; color: #06B6D4; margin-bottom: 4px;">📄 {src_name} (Page {page_num})</div><div style="color: #94A3B8; font-style: italic;">"{preview_text}..."</div></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="glass-card" style="text-align: center; color: #94A3B8; padding: 2rem 1rem;"><div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📡</div>Ask a query to inspect live context retrieval weights and citations.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-card" style="text-align: center; color: #94A3B8; padding: 2rem 1rem;"><div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📡</div>Ask a query to inspect live semantic retrieval weights and citations.</div>', unsafe_allow_html=True)
