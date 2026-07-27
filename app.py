@@ -68,14 +68,14 @@ with st.sidebar:
         st.session_state.latest_sources = []
         st.rerun()
 
-# Pipeline Processing (Pure Python BM25 Indexing)
+# Pipeline Processing
 if process_btn:
     if not os.environ.get("GOOGLE_API_KEY"):
         st.sidebar.error("⚠️ API Key not found in environment or secrets.")
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
     else:
-        with st.spinner("⚡ Initializing Pure-Python Keyword & Semantic Index..."):
+        with st.spinner("⚡ Initializing Keyword & Semantic Index..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -94,7 +94,6 @@ if process_btn:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = text_splitter.split_documents(all_docs)
             
-            # Pure Python BM25 Retriever - Zero C++ DLL dependencies
             bm25_retriever = BM25Retriever.from_documents(chunks)
             bm25_retriever.k = 4
             st.session_state.retriever = bm25_retriever
@@ -106,7 +105,7 @@ if process_btn:
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 1.5 Flash</div>
+    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini Pro</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -130,7 +129,8 @@ with chat_col:
                 message_placeholder = st.empty()
                 full_response = ""
                 try:
-                    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2, streaming=True)
+                    # Using gemini-pro for stable API generation without 404 errors
+                    llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.2, streaming=True)
                     prompt_template = ChatPromptTemplate.from_messages([
                         ("system", "Answer accurately using ONLY the provided context. If the answer is absent, state that you cannot find it. Cite sources clearly.\n\nContext:\n{context}"),
                         ("human", "{question}")
