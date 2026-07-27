@@ -4,14 +4,13 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
-# Load environment variables from local .env file automatically
+# Load environment variables
 load_dotenv()
 
 # Page Configuration
@@ -22,93 +21,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ---------------------------------------------------------
-# CUSTOM CSS: Glassmorphism & Neon Glows
-# ---------------------------------------------------------
+# Custom Styling
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #090A0F;
-        color: #F8FAFC;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-
+    .stApp { background-color: #090A0F; color: #F8FAFC; font-family: 'Inter', sans-serif; }
     .hero-container {
         background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(6, 182, 212, 0.05) 100%);
-        border: 1px solid rgba(99, 102, 241, 0.2);
-        border-radius: 16px;
-        padding: 2rem;
-        text-align: center;
-        margin-bottom: 2rem;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 16px; padding: 2rem; text-align: center; margin-bottom: 2rem;
     }
-    .hero-title {
-        font-size: 2.5rem;
-        font-weight: 800;
-        background: linear-gradient(90deg, #6366F1, #06B6D4);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-    }
-    .hero-subtitle {
-        color: #94A3B8;
-        font-size: 1.05rem;
-    }
-
-    .glass-card {
-        background: rgba(18, 20, 28, 0.75);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 12px;
-        padding: 1.25rem;
-        backdrop-filter: blur(8px);
-        margin-bottom: 1rem;
-    }
-
-    .stChatMessage {
-        background-color: rgba(18, 20, 28, 0.6) !important;
-        border: 1px solid rgba(255, 255, 255, 0.05) !important;
-        border-radius: 12px !important;
-        padding: 1rem !important;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-
-    [data-testid="stSidebar"] {
-        background-color: #0D0E14;
-        border-right: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .stButton > button {
-        background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        padding: 0.6rem 1.2rem;
-        box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
-        transition: all 0.3s ease;
-        width: 100%;
-    }
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #4F46E5 100%, #4338CA 100%);
-        box-shadow: 0 0 25px rgba(99, 102, 241, 0.7);
-        transform: translateY(-1px);
-    }
-
-    .metric-box {
-        background: rgba(99, 102, 241, 0.08);
-        border: 1px solid rgba(99, 102, 241, 0.2);
-        border-radius: 8px;
-        padding: 0.75rem;
-        text-align: center;
-    }
+    .hero-title { font-size: 2.5rem; font-weight: 800; background: linear-gradient(90deg, #6366F1, #06B6D4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero-subtitle { color: #94A3B8; font-size: 1.05rem; }
+    .glass-card { background: rgba(18, 20, 28, 0.75); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+    .metric-box { background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 0.75rem; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# Safe fallback check for Streamlit Cloud secrets vs local environment
 if not os.environ.get("GOOGLE_API_KEY"):
     try:
         if "GOOGLE_API_KEY" in st.secrets:
@@ -116,67 +43,39 @@ if not os.environ.get("GOOGLE_API_KEY"):
     except Exception:
         pass
 
-# ---------------------------------------------------------
-# SESSION STATE INITIALIZATION
-# ---------------------------------------------------------
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "faiss_retriever" not in st.session_state:
-    st.session_state.faiss_retriever = None
-if "bm25_retriever" not in st.session_state:
-    st.session_state.bm25_retriever = None
-if "doc_stats" not in st.session_state:
-    st.session_state.doc_stats = {"files": 0, "chunks": 0}
-if "latest_sources" not in st.session_state:
-    st.session_state.latest_sources = []
+# Session State
+if "chat_history" not in st.session_state: st.session_state.chat_history = []
+if "retriever" not in st.session_state: st.session_state.retriever = None
+if "doc_stats" not in st.session_state: st.session_state.doc_stats = {"files": 0, "chunks": 0}
+if "latest_sources" not in st.session_state: st.session_state.latest_sources = []
 
-# ---------------------------------------------------------
-# SIDEBAR: Document Ingestion & Telemetry
-# ---------------------------------------------------------
+# Sidebar
 with st.sidebar:
     st.markdown("### 📁 Knowledge Base Ingestion")
-    uploaded_files = st.file_uploader(
-        "Upload PDF documents", 
-        type=["pdf"], 
-        accept_multiple_files=True,
-        help="Upload multi-page PDFs for hybrid indexing"
-    )
-    
+    uploaded_files = st.file_uploader("Upload PDF documents", type=["pdf"], accept_multiple_files=True)
     process_btn = st.button("🚀 Initialize Pipeline")
     
     st.markdown("---")
     st.markdown("### 📊 System Telemetry")
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div style="font-size: 0.75rem; color: #94A3B8;">DOCUMENTS</div>
-            <div style="font-size: 1.25rem; font-weight: 700; color: #06B6D4;">{st.session_state.doc_stats['files']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-box"><div style="font-size:0.75rem;color:#94A3B8;">DOCS</div><div style="font-size:1.25rem;font-weight:700;color:#06B6D4;">{st.session_state.doc_stats["files"]}</div></div>', unsafe_allow_html=True)
     with col_s2:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div style="font-size: 0.75rem; color: #94A3B8;">CHUNKS</div>
-            <div style="font-size: 1.25rem; font-weight: 700; color: #6366F1;">{st.session_state.doc_stats['chunks']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-box"><div style="font-size:0.75rem;color:#94A3B8;">CHUNKS</div><div style="font-size:1.25rem;font-weight:700;color:#6366F1;">{st.session_state.doc_stats["chunks"]}</div></div>', unsafe_allow_html=True)
 
     if st.button("🗑️ Clear Conversation"):
         st.session_state.chat_history = []
         st.session_state.latest_sources = []
         st.rerun()
 
-# ---------------------------------------------------------
-# DOCUMENT PROCESSING PIPELINE
-# ---------------------------------------------------------
+# Pipeline Processing (Pure Python BM25 Indexing)
 if process_btn:
     if not os.environ.get("GOOGLE_API_KEY"):
-        st.sidebar.error("⚠️ API Key not found. Please add GOOGLE_API_KEY to your .env file.")
+        st.sidebar.error("⚠️ API Key not found in environment or secrets.")
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
     else:
-        with st.spinner("⚡ Initializing FAISS + BM25 Hybrid Index & Google API Embeddings..."):
+        with st.spinner("⚡ Initializing Pure-Python Keyword & Semantic Index..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -195,49 +94,19 @@ if process_btn:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = text_splitter.split_documents(all_docs)
             
-            # Using Google's cloud text-embedding-004 model via API (No PyTorch/DLL required!)
-            embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004")
-            faiss_vectorstore = FAISS.from_documents(chunks, embeddings)
-            st.session_state.faiss_retriever = faiss_vectorstore.as_retriever(search_kwargs={"k": 4})
-            
-            bm25_ret = BM25Retriever.from_documents(chunks)
-            bm25_ret.k = 4
-            st.session_state.bm25_retriever = bm25_ret
+            # Pure Python BM25 Retriever - Zero C++ DLL dependencies
+            bm25_retriever = BM25Retriever.from_documents(chunks)
+            bm25_retriever.k = 4
+            st.session_state.retriever = bm25_retriever
             
             st.session_state.doc_stats = {"files": len(uploaded_files), "chunks": len(chunks)}
-            st.sidebar.success("✨ Hybrid Vector Index Online!")
+            st.sidebar.success("✨ Index Online!")
 
-# Native Reciprocal Rank Fusion (RRF) Hybrid Search
-def hybrid_retrieve(query, k=4):
-    if not st.session_state.faiss_retriever or not st.session_state.bm25_retriever:
-        return []
-    
-    faiss_docs = st.session_state.faiss_retriever.invoke(query)
-    bm25_docs = st.session_state.bm25_retriever.invoke(query)
-    
-    fusion_scores = {}
-    doc_map = {}
-    
-    for rank, doc in enumerate(faiss_docs):
-        doc_id = doc.page_content
-        doc_map[doc_id] = doc
-        fusion_scores[doc_id] = fusion_scores.get(doc_id, 0) + 1 / (60 + rank + 1)
-        
-    for rank, doc in enumerate(bm25_docs):
-        doc_id = doc.page_content
-        doc_map[doc_id] = doc
-        fusion_scores[doc_id] = fusion_scores.get(doc_id, 0) + 1 / (60 + rank + 1)
-        
-    sorted_docs = sorted(fusion_scores.items(), key=lambda x: x[1], reverse=True)
-    return [doc_map[doc_id] for doc_id, score in sorted_docs[:k]]
-
-# ---------------------------------------------------------
-# MAIN WORKSPACE: Cinematic Hero & Split View
-# ---------------------------------------------------------
+# Main Workspace
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini & Hybrid Dense-Sparse Fusion</div>
+    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 1.5 Flash</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -250,7 +119,7 @@ with chat_col:
 
     user_query = st.chat_input("Ask a question across your documents...")
     if user_query:
-        if st.session_state.faiss_retriever is None:
+        if st.session_state.retriever is None:
             st.warning("⚠️ Please upload and process documents in the sidebar first.")
         else:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
@@ -267,7 +136,7 @@ with chat_col:
                         ("human", "{question}")
                     ])
                     
-                    retrieved_docs = hybrid_retrieve(user_query)
+                    retrieved_docs = st.session_state.retriever.invoke(user_query)
                     st.session_state.latest_sources = retrieved_docs
                     
                     context_text = "\n\n".join([
@@ -298,22 +167,11 @@ with chat_col:
 with source_col:
     st.markdown("### 🔍 Live Source Inspector")
     if st.session_state.latest_sources:
-        st.markdown(f"<p style='color: #94A3B8; font-size: 0.85rem;'>Retrieved {len(st.session_state.latest_sources)} chunks via Hybrid Fusion</p>", unsafe_allow_html=True)
-        for i, doc in enumerate(st.session_state.latest_sources):
+        st.markdown(f"<p style='color: #94A3B8; font-size: 0.85rem;'>Retrieved {len(st.session_state.latest_sources)} chunks</p>", unsafe_allow_html=True)
+        for doc in st.session_state.latest_sources:
             src_name = doc.metadata.get('source', 'Unknown')
             page_num = doc.metadata.get('page', 0) + 1
             preview_text = doc.page_content[:220].replace('\n', ' ')
-            
-            st.markdown(f"""
-            <div class="glass-card" style="font-size: 0.85rem;">
-                <div style="font-weight: 600; color: #06B6D4; margin-bottom: 4px;">📄 {src_name} (Page {page_num})</div>
-                <div style="color: #94A3B8; font-style: italic;">"{preview_text}..."</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="glass-card" style="font-size: 0.85rem;"><div style="font-weight: 600; color: #06B6D4; margin-bottom: 4px;">📄 {src_name} (Page {page_num})</div><div style="color: #94A3B8; font-style: italic;">"{preview_text}..."</div></div>', unsafe_allow_html=True)
     else:
-        st.markdown("""
-        <div class="glass-card" style="text-align: center; color: #94A3B8; padding: 2rem 1rem;">
-            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📡</div>
-            Ask a query to inspect live context retrieval weights, chunk contents, and precise page citations in real-time.
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="glass-card" style="text-align: center; color: #94A3B8; padding: 2rem 1rem;"><div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📡</div>Ask a query to inspect live context retrieval weights and citations.</div>', unsafe_allow_html=True)
