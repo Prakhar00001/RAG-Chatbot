@@ -72,7 +72,7 @@ if process_btn:
     elif not client:
         st.sidebar.error("⚠️ Google GenAI Client not initialized.")
     else:
-        with st.spinner("⚡ Generating Google Semantic Embeddings (No PyTorch/DLLs)..."):
+        with st.spinner("⚡ Generating Semantic Embeddings (text-embedding-001)..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -91,11 +91,10 @@ if process_btn:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             chunks = text_splitter.split_documents(all_docs)
             
-            # Generate embeddings via Google API (text-embedding-004)
             embeddings = []
             for chunk in chunks:
                 response = client.models.embed_content(
-                    model="text-embedding-004",
+                    model="text-embedding-001",
                     contents=chunk.page_content
                 )
                 embeddings.append(response.embedding.values)
@@ -109,14 +108,12 @@ def semantic_search(query, k=4):
     if len(st.session_state.doc_chunks) == 0 or client is None:
         return []
     
-    # Embed query
     q_response = client.models.embed_content(
-        model="text-embedding-004",
+        model="text-embedding-001",
         contents=query
     )
     q_vec = np.array(q_response.embedding.values)
     
-    # Compute Cosine Similarity
     doc_matrix = st.session_state.doc_embeddings
     similarities = np.dot(doc_matrix, q_vec) / (np.linalg.norm(doc_matrix, axis=1) * np.linalg.norm(q_vec) + 1e-10)
     
@@ -126,7 +123,7 @@ def semantic_search(query, k=4):
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous Semantic Q&A powered by Google Cloud Embeddings & Gemini</div>
+    <div class="hero-subtitle">Autonomous Semantic Q&A powered by Google Embeddings & Gemini Flash</div>
 </div>
 """, unsafe_allow_html=True)
 
