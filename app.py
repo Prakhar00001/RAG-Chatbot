@@ -5,15 +5,10 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from google import genai
 
-# Load environment variables
 load_dotenv()
 
-# Page Configuration
 st.set_page_config(
     page_title="NEXUS-RAG | Autonomous AI Intelligence",
     page_icon="⚡",
@@ -21,7 +16,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling
 st.markdown("""
 <style>
     .stApp { background-color: #090A0F; color: #F8FAFC; font-family: 'Inter', sans-serif; }
@@ -43,13 +37,14 @@ if not os.environ.get("GOOGLE_API_KEY"):
     except Exception:
         pass
 
-# Session State
+api_key = os.environ.get("GOOGLE_API_KEY")
+client = genai.Client(api_key=api_key) if api_key else None
+
 if "chat_history" not in st.session_state: st.session_state.chat_history = []
 if "retriever" not in st.session_state: st.session_state.retriever = None
 if "doc_stats" not in st.session_state: st.session_state.doc_stats = {"files": 0, "chunks": 0}
 if "latest_sources" not in st.session_state: st.session_state.latest_sources = []
 
-# Sidebar
 with st.sidebar:
     st.markdown("### 📁 Knowledge Base Ingestion")
     uploaded_files = st.file_uploader("Upload PDF documents", type=["pdf"], accept_multiple_files=True)
@@ -68,14 +63,13 @@ with st.sidebar:
         st.session_state.latest_sources = []
         st.rerun()
 
-# Pipeline Processing
 if process_btn:
-    if not os.environ.get("GOOGLE_API_KEY"):
+    if not api_key:
         st.sidebar.error("⚠️ API Key not found in environment or secrets.")
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
     else:
-        with st.spinner("⚡ Initializing Keyword & Semantic Index..."):
+        with st.spinner("⚡ Initializing Keyword Index..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -101,11 +95,10 @@ if process_btn:
             st.session_state.doc_stats = {"files": len(uploaded_files), "chunks": len(chunks)}
             st.sidebar.success("✨ Index Online!")
 
-# Main Workspace
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini Pro</div>
+    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 2.5 Flash</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -120,6 +113,8 @@ with chat_col:
     if user_query:
         if st.session_state.retriever is None:
             st.warning("⚠️ Please upload and process documents in the sidebar first.")
+        elif not client:
+            st.error("⚠️ Google API Client not initialized. Check your API key.")
         else:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
             with st.chat_message("user", avatar="👤"):
@@ -129,13 +124,6 @@ with chat_col:
                 message_placeholder = st.empty()
                 full_response = ""
                 try:
-                    # Using gemini-pro for stable API generation without 404 errors
-                    llm = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.2, streaming=True)
-                    prompt_template = ChatPromptTemplate.from_messages([
-                        ("system", "Answer accurately using ONLY the provided context. If the answer is absent, state that you cannot find it. Cite sources clearly.\n\nContext:\n{context}"),
-                        ("human", "{question}")
-                    ])
-                    
                     retrieved_docs = st.session_state.retriever.invoke(user_query)
                     st.session_state.latest_sources = retrieved_docs
                     
@@ -144,16 +132,14 @@ with chat_col:
                         for d in retrieved_docs
                     ])
                     
-                    chain = (
-                        {"context": lambda x: context_text, "question": RunnablePassthrough()}
-                        | prompt_template
-                        | llm
-                        | StrOutputParser()
+                    prompt = f"Answer accurately using ONLY the provided context. If the answer is absent, state that you cannot find it. Cite sources clearly.\n\nContext:\n{context_text}\n\nQuestion: {user_query}"
+                    
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt
                     )
                     
-                    for chunk in chain.stream(user_query):
-                        full_response += chunk
-                        message_placeholder.markdown(full_response + "▌")
+                    full_response = response.text
                     
                     sources = sorted(set(f"{d.metadata.get('source')} (Page {d.metadata.get('page', 0)+1})" for d in retrieved_docs))
                     if sources:
