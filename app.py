@@ -98,7 +98,7 @@ if process_btn:
 st.markdown("""
 <div class="hero-container">
     <div class="hero-title">⚡ NEXUS-RAG Intelligence</div>
-    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 2.5 Flash</div>
+    <div class="hero-subtitle">Autonomous multi-document Q&A powered by Gemini 3.6 Flash</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -134,8 +134,9 @@ with chat_col:
                     
                     prompt = f"Answer accurately using ONLY the provided context. If the answer is absent, state that you cannot find it. Cite sources clearly.\n\nContext:\n{context_text}\n\nQuestion: {user_query}"
                     
+                    # Using the active gemini-3.6-flash model
                     response = client.models.generate_content(
-                        model='gemini-2.5-flash',
+                        model='gemini-3.6-flash',
                         contents=prompt
                     )
                     
