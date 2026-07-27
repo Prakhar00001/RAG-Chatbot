@@ -2,7 +2,7 @@ import os
 import tempfile
 import streamlit as st
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader
+from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers import BM25Retriever
 from google import genai
@@ -45,6 +45,11 @@ if "retriever" not in st.session_state: st.session_state.retriever = None
 if "doc_stats" not in st.session_state: st.session_state.doc_stats = {"files": 0, "chunks": 0}
 if "latest_sources" not in st.session_state: st.session_state.latest_sources = []
 
+class Document:
+    def __init__(self, page_content, metadata):
+        self.page_content = page_content
+        self.metadata = metadata
+
 with st.sidebar:
     st.markdown("### 📁 Knowledge Base Ingestion")
     uploaded_files = st.file_uploader("Upload PDF documents", type=["pdf"], accept_multiple_files=True)
@@ -69,18 +74,21 @@ if process_btn:
     elif not uploaded_files:
         st.sidebar.error("⚠️ Upload at least one PDF file.")
     else:
-        with st.spinner("⚡ Initializing BM25 Index..."):
+        with st.spinner("⚡ Parsing PDFs and Initializing Index..."):
             all_docs = []
             for uploaded_file in uploaded_files:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_path = tmp_file.name
                 try:
-                    loader = PyPDFLoader(tmp_path)
-                    docs = loader.load()
-                    for doc in docs:
-                        doc.metadata["source"] = uploaded_file.name
-                    all_docs.extend(docs)
+                    reader = PdfReader(tmp_path)
+                    for page_idx, page in enumerate(reader.pages):
+                        text = page.extract_text()
+                        if text:
+                            all_docs.append(Document(
+                                page_content=text,
+                                metadata={"source": uploaded_file.name, "page": page_idx}
+                            ))
                 finally:
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
@@ -109,7 +117,6 @@ with chat_col:
         with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
             st.markdown(message["content"])
 
-    # Inline chat form staying right below the last message/answer
     with st.form(key="chat_form", clear_on_submit=True):
         user_query = st.text_input(
             "Ask a question...", 
